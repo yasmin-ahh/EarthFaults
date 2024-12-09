@@ -124,6 +124,18 @@ def process_comtrade_data(folder_path, cutoff_freq=50.0):
         min_length = len(timestamps)
         voltages = [v[:min_length] for v in voltages]
         currents = [c[:min_length] for c in currents]
+        
+        # Plot raw voltage and current signals
+        plt.figure(figsize=(12, 6))
+        for i in range(3):
+            plt.plot(timestamps, voltages[i], label=f'Voltage Phase {i + 1}')
+            plt.plot(timestamps, currents[i], label=f'Current Phase {i + 1}')
+        plt.title(f'Raw Signals from {cfg_file}')
+        plt.xlabel('Time (s)')
+        plt.ylabel('Amplitude')
+        plt.legend()
+        plt.grid()
+        plt.show()
 
         # High-pass filter the signals
         sampling_rate = 1 / np.mean(np.diff(timestamps))  # Sampling frequency
