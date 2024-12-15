@@ -4,28 +4,8 @@ __date__ = "$Date$"         # Date of the last SVN revision.
 import os
 import numpy as np
 import matplotlib.pyplot as plt
-from scipy.signal import butter, lfilter
 import pyComtrade
-
-# Design and apply a high-pass filter to remove low-frequency components
-def high_pass_filter(data, cutoff, fs, order=4):
-    """
-    Applies a high-pass Butterworth filter to the input data.
-    
-    Parameters:
-    - data: Input signal (1D array).
-    - cutoff: Cutoff frequency of the filter (Hz).
-    - fs: Sampling frequency (Hz).
-    - order: Filter order (default: 4).
-    
-    Returns:
-    - Filtered signal (1D array).
-    """
-    nyquist = 0.5 * fs  # Nyquist frequency (half the sampling frequency)
-    normalized_cutoff = cutoff / nyquist  # Normalize cutoff relative to Nyquist
-    b, a = butter(order, normalized_cutoff, btype='high', analog=False)  # Filter coefficients
-    return lfilter(b, a, data)  # Apply the filter to the input signal
-
+from utilities.signal_processing import high_pass_filter
 
 # Compute zero-sequence voltage (U0) and current (I0)
 def compute_zero_sequence(voltages, currents):
@@ -117,17 +97,28 @@ def process_comtrade_data(folder_path, cutoff_freq=50.0):
         
         # Extract time, voltage, and current data
         timestamps = comtradeObj.get_timestamps()
-        voltages = [ch['values'] for ch in comtradeObj.cfg_data['A'][:3]]  # 3-phase voltages
-        currents = [ch['values'] for ch in comtradeObj.cfg_data['A'][3:]]  # 3-phase currents
+
+        # Extract voltages (Channels 2, 3, 4 -> Python indexing [1:4])
+        voltages = [ch['values'] for ch in comtradeObj.cfg_data['A'][0:3]]  # 3-phase voltages (L1, L2, L3)
+
+        # Check for zero-sequence current explicitly
+        zero_seq_current = None
+        if len(comtradeObj.cfg_data['A']) > 3:
+            zero_seq_current = comtradeObj.cfg_data['A'][3]['values']  # Explicit I_3I0 if available
+            print(f"Zero-sequence current (I_3I0) provided in {cfg_file}. Using the explicit measurement.")
+
+
+        # Extract currents (Channels 5, 6, 7 -> Python indexing [3:6])
+        currents = [ch['values'] for ch in comtradeObj.cfg_data['A'][4:7]]  # 3-phase currents (I L1, I L2, I L3)
 
         # Ensure dimensions match timestamps
         min_length = len(timestamps)
         voltages = [v[:min_length] for v in voltages]
         currents = [c[:min_length] for c in currents]
-        
+
         # Plot raw voltage and current signals
         plt.figure(figsize=(12, 6))
-        for i in range(3):
+        for i in range(3):  # Loop over the three phases (indices 0, 1, 2)
             plt.plot(timestamps, voltages[i], label=f'Voltage Phase {i + 1}')
             plt.plot(timestamps, currents[i], label=f'Current Phase {i + 1}')
         plt.title(f'Raw Signals from {cfg_file}')
@@ -142,6 +133,15 @@ def process_comtrade_data(folder_path, cutoff_freq=50.0):
         filtered_voltages = [high_pass_filter(v, cutoff_freq, sampling_rate) for v in voltages]
         filtered_currents = [high_pass_filter(i, cutoff_freq, sampling_rate) for i in currents]
 
+        # Compute zero-sequence components only if I_3I0 is not provided
+        if zero_seq_current is None:
+            print(f"No explicit zero-sequence current (I_3I0) found. Calculating it from the 3-phase currents.")
+            u0, i0 = compute_zero_sequence(filtered_voltages, filtered_currents)
+        else:
+            print(f"Using explicit zero-sequence current for fault classification.")
+            u0 = np.mean(filtered_voltages, axis=0)  # Zero-sequence voltage
+            i0 = zero_seq_current  # Use the explicit I_3I0
+
         # Detect transient conditions and find the timestamp
         threshold = np.mean([np.mean(np.abs(v)) for v in filtered_voltages]) + 3 * np.std([np.std(np.abs(v)) for v in filtered_voltages])
         print(f"Threshold for transient detection: {threshold}")  # Debugging
@@ -152,8 +152,6 @@ def process_comtrade_data(folder_path, cutoff_freq=50.0):
             print(f"Transient detected in {cfg_file}.")
             print(f"Fault detected in Phase {fault_phase} at {fault_time:.6f} seconds.")
 
-            # Compute zero-sequence components
-            u0, i0 = compute_zero_sequence(filtered_voltages, filtered_currents)
 
             # Classify the fault
             fault_type = classify_fault(u0, i0)
