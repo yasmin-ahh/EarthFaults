@@ -38,7 +38,7 @@ def scale_all_channels(raw_signals, cfg_channels):
     return scaled_signals
 
 
-def process_comtrade_data(folder_path, cutoff_freq=50.0):
+def process_comtrade_data(folder_path, cutoff_freq=20.0):
     """
     Processes Comtrade files in a folder and identifies faults based on U0 and I0 thresholds.
 
