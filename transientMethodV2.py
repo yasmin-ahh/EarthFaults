@@ -66,21 +66,12 @@ def process_comtrade_data(folder_path, cutoff_freq=50.0):
         raw_zero_seq_current = comtradeObj.cfg_data['A'][3]['values']  # Channel 4
         # raw_currents = [ch['values'] for ch in comtradeObj.cfg_data['A'][4:7]]  # Channels 5, 6, 7
 
-        # Scale voltages, zero-sequence current, and currents
-        scaled_voltages = scale_all_channels(raw_voltages, comtradeObj.cfg_data['A'][0:3])  # First 3 channels
-        scaled_zero_seq_current = scale_data(
-            np.array(raw_zero_seq_current),
-            comtradeObj.cfg_data['A'][3]['a'],
-            comtradeObj.cfg_data['A'][3]['b']
-        )  # Channel 4
-        # currents = scale_all_channels(raw_currents, comtradeObj.cfg_data['A'][4:7])  # Last 3 channels
-
         # Ensure dimensions match timestamps
         min_length = len(timestamps)
-        voltages = [v[:min_length] for v in scaled_voltages]
+        voltages = [v[:min_length] for v in raw_voltages]
         # currents2 = [c[:min_length] for c in currents]
-        if scaled_zero_seq_current is not None:
-            zero_seq_current = scaled_zero_seq_current[:min_length]
+        if raw_zero_seq_current is not None:
+            zero_seq_current = raw_zero_seq_current[:min_length]
 
 
         # High-pass filter the signals
