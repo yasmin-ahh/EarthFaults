@@ -8,10 +8,10 @@ Created on Tue Dec  3 19:23:42 2024
 import os
 import numpy as np
 import matplotlib.pyplot as plt
-from utilities.signal_processing import high_pass_filter
-from utilities.fault_classification import detect_fault_with_thresholds, classify_fault
-from utilities.threshold_compute import compute_thresholds
-import pyComtrade
+#from utilities.signal_processing import high_pass_filter
+#from utilities.fault_classification import detect_fault_with_thresholds, classify_fault
+#from utilities.threshold_compute import compute_thresholds
+from utilities import pyComtrade
 
 
 def process_comtrade_data(folder_path):
@@ -22,6 +22,7 @@ def process_comtrade_data(folder_path):
     - folder_path: Path to the folder containing Comtrade files (.cfg and .dat).
     - cutoff_freq: High-pass filter cutoff frequency (default: 50 Hz).
     """
+   
     files = [f for f in os.listdir(folder_path) if f.endswith('.cfg')]
     for cfg_file in files:
         dat_file = cfg_file.replace('.cfg', '.dat')
@@ -33,23 +34,45 @@ def process_comtrade_data(folder_path):
         # Load the Comtrade data
         comtradeObj = pyComtrade.ComtradeRecord()
         comtradeObj.read(os.path.join(folder_path, cfg_file), os.path.join(folder_path, dat_file))
-        
+        #comtradeObj.read(os.path.join(folder_path,"rspe4.cfg"), os.path.join(folder_path, "rspe4.dat"))
         # Extract time, voltage, and current data
         timestamps = comtradeObj.get_timestamps()
 
         # Extract raw voltages, zero-sequence current, and currents
         raw_voltages = [ch['values'] for ch in comtradeObj.cfg_data['A'][0:3]]  # Channels 1, 2, 3
         raw_zero_seq_current = comtradeObj.cfg_data['A'][3]['values']  # Channel 4
-        # raw_currents = [ch['values'] for ch in comtradeObj.cfg_data['A'][4:7]]  # Channels 5, 6, 7
+        raw_currents = [ch['values'] for ch in comtradeObj.cfg_data['A'][4:7]]  # Channels 5, 6, 7
 
         # Ensure dimensions match timestamps
         min_length = len(timestamps)
         voltages = [v[:min_length] for v in raw_voltages]
-        currents2 = [c[:min_length] for c in currents]
+        currents = [c[:min_length] for c in raw_currents]
         if raw_zero_seq_current is not None:
             zero_seq_current = raw_zero_seq_current[:min_length]
+        
+        # Subplot for voltages
+        plt.subplot(2, 1, 1)
+        plt.plot(timestamps, voltages[0], label='Ua', color='blue')
+        plt.plot(timestamps, voltages[1], label='Ub', color='red')
+        plt.plot(timestamps, voltages[2], label='Uc', color='green')
+        plt.title("Three-Phase Voltages")
+        plt.xlabel("Time (s)")
+        plt.ylabel("Voltage (V)")
+        plt.legend()
+        plt.grid()
+
+        # Subplot for currents
+        plt.subplot(2, 1, 2)
+        plt.plot(timestamps, currents[0], label='Ia', color='red')
+        plt.plot(timestamps, currents[1], label='Ib', color='blue')
+        plt.plot(timestamps, currents[2], label='Ic', color='green')
+        plt.title("Three-Phase Currents")
+        plt.xlabel("Time (s)")
+        plt.ylabel("Current (A)")
+        plt.legend()
+        plt.grid()    
       
-        return voltages,currents2,zero_seq_current
+        return voltages,currents,zero_seq_current, timestamps
 
 """            
 #get input  data from Comtrade files
@@ -118,47 +141,68 @@ def compute_zero_sequence(voltages, currents):
     I0 = np.mean(currents, axis=1)  # Zero-sequence current
     return U0, I0
 
-#Fourier Transform Filter
-def extract_5th_harmonic(voltage, current, sampling_rate, fundamental_frequency):
+def extract_fifth_harmonic(signal, sampling_rate, fundamental_frequency):
     """
-    Extract the 5th harmonic from voltage and current arrays.
-    
-    Parameters:
-        voltage (np.ndarray): 3xN array of voltage signals.
-        current (np.ndarray): 3xN array of current signals.
+    Extract the 5th harmonic of a signal using FFT.
+
+    Args:
+        signal (array): The input time-domain signal (voltages or currents).
+        sampling_rate (float): Sampling rate of the signal in Hz.
+        fundamental_frequency (float): Fundamental frequency in Hz.
+
+    Returns:
+        array: Time-domain signal corresponding to the 5th harmonic.
+    """
+    # Total number of samples
+    N = len(signal)
+
+    # Perform FFT on the signal
+    fft_result = np.fft.fft(signal)
+
+    # Frequency resolution (step size between frequencies)
+    freq_resolution = sampling_rate / N
+
+    # Calculate the index for the 5th harmonic
+    fifth_harmonic_freq = 5 * fundamental_frequency  # Frequency of the 5th harmonic
+    index = int(np.round(fifth_harmonic_freq / freq_resolution))
+
+    # Create an empty FFT spectrum with zeros
+    fifth_harmonic_spectrum = np.zeros_like(fft_result, dtype=complex)
+
+    # Isolate the 5th harmonic and its conjugate (negative frequency part)
+    fifth_harmonic_spectrum[index] = fft_result[index]  # Positive frequency
+    fifth_harmonic_spectrum[-index] = fft_result[-index]  # Negative frequency (conjugate)
+
+    # Perform the Inverse FFT to get the time-domain signal of the 5th harmonic
+    fifth_harmonic_signal = np.fft.ifft(fifth_harmonic_spectrum).real
+
+    return fifth_harmonic_signal
+
+
+def extract_fifth_harmonics(voltages, currents, sampling_rate, fundamental_frequency):
+    """
+    Extract the 5th harmonic components for voltage and current arrays.
+
+    Args:
+        voltages (list of arrays): List of voltage signals (e.g., Phase A, B, C).
+        currents (list of arrays): List of current signals (e.g., Phase A, B, C).
         sampling_rate (float): Sampling rate of the signals in Hz.
         fundamental_frequency (float): Fundamental frequency in Hz.
-    
+
     Returns:
-        tuple: Filtered voltage and current signals (3xN arrays) containing only the 5th harmonic.
+        dict: Dictionary containing 5th harmonic components for voltages and currents.
     """
+    # Extract 5th harmonics for each voltage and current phase
+    fifth_harmonics_voltages = [
+        extract_fifth_harmonic(v, sampling_rate, fundamental_frequency) for v in voltages
+    ]
+
+    fifth_harmonics_currents = [
+        extract_fifth_harmonic(c, sampling_rate, fundamental_frequency) for c in currents
+    ]
+
+    return fifth_harmonics_voltages,fifth_harmonics_currents
     
-    # Compute FFT for both voltage and current
-    voltage_fft = np.fft.fft(voltage, axis=1)
-    current_fft = np.fft.fft(current, axis=1)
-    
-    # Frequency resolution
-    N = voltage.shape[1]
-    freq_resolution = sampling_rate / N
-    fifth_harmonic_freq = 5 * fundamental_frequency
-    
-    # Find the index of the 5th harmonic
-    harmonic_index = int(round(fifth_harmonic_freq / freq_resolution))
-    
-    # Create a mask for the 5th harmonic
-    harmonic_mask = np.zeros(N, dtype=complex)
-    harmonic_mask[harmonic_index] = 1  # Positive frequency
-    harmonic_mask[-harmonic_index] = 1  # Negative frequency (complex conjugate)
-    
-    # Apply the mask to isolate the 5th harmonic
-    filtered_voltage_fft = voltage_fft * harmonic_mask
-    filtered_current_fft = current_fft * harmonic_mask
-    
-    # Inverse FFT to return to the time domain
-    filtered_voltage = np.fft.ifft(filtered_voltage_fft, axis=1).real
-    filtered_current = np.fft.ifft(filtered_current_fft, axis=1).real
-    
-    return filtered_voltage, filtered_current
 
 # Fault Detection Logic
 def detect_fault(U0, I0, threshold):
@@ -231,68 +275,43 @@ def compute_threshold(U0, I0, fault_free_start, fault_free_end, timestamps, n=3)
 
 # Path to the folder containing Comtrade files
 folder_path = "comdata"
-voltages,currents,timestamps = process_comtrade_data(folder_path)
+voltages,currents,zero_seq,timestamps = process_comtrade_data(folder_path)
 
-freq =50
-sampling_rate = 10000
-#Get 5th harmonics
-fifth_Harmonic_V, fifth_Harmonic_I = extract_5th_harmonic(voltages, currents, sampling_rate, freq)
-# Compute zero-sequence components
-fifth_Harmonic_V0, fifth_Harmonic_I0 = compute_zero_sequence(fifth_Harmonic_V,fifth_Harmonic_I)
+fifth_Harmonic_voltages = []
+fifth_Harmonic_currents = []
+zero_seq_I = []
+zero_seq_V = []
+fundamental_frequency =50
+sampling_frequency = 100000
 
+
+fifth_Harmonic_voltages,fifth_Harmonic_currents = extract_fifth_harmonics(voltages, currents, sampling_frequency, fundamental_frequency)
+time = np.arange(0, 1, 1 / sampling_frequency)  # 1-second signal
+'''
+# Plot the extracted 5th harmonic voltages and currents
+fig, axes = plt.subplots(3, 2, figsize=(12, 8), sharex=True)
+
+for i in range(3):
+    # Plot extracted 5th harmonic for voltage
+    axes[i, 0].plot(timestamps[i], fifth_Harmonic_voltages[i], label=f"Phase {['A', 'B', 'C'][i]} Voltage Harmonic", color='tab:blue')
+    axes[i, 0].set_ylabel("Amplitude")
+    axes[i, 0].legend(loc='upper right')
+    
+    # Plot extracted 5th harmonic for current
+    axes[i, 1].plot(timestamps[i], fifth_Harmonic_currents[i], label=f"Phase {['A', 'B', 'C'][i]} Current Harmonic", color='tab:orange')
+    axes[i, 1].set_xlabel("Time [s]")
+    axes[i, 1].set_ylabel("Amplitude")
+    axes[i, 1].legend(loc='upper right')
+
+'''
 # Compute threshold
 # Define fault-free time range (e.g., 0 to 2 seconds)
 fault_free_start = 0  # Start time in seconds
 fault_free_end = 1000  # End time in seconds
-THRESHOLD = compute_threshold(fifth_Harmonic_V0, fifth_Harmonic_I0, fault_free_start, fault_free_end, timestamps, n=3)
 
+THRESHOLD =1
 # Detect faults
-fault_results = detect_fault(fifth_Harmonic_V0, fifth_Harmonic_I0, THRESHOLD)
+fault_results = detect_fault(fifth_Harmonic_voltages, fifth_Harmonic_currents, THRESHOLD)
 
-# Plotting the voltages and currents
-plt.figure(figsize=(20, 20))
+
    
-# Subplot for voltages
-plt.subplot(4, 1, 1)
-plt.plot(timestamps, voltages[:, 0], label='Ua', color='blue')
-plt.plot(timestamps, voltages[:, 1], label='Ub', color='red')
-plt.plot(timestamps, voltages[:, 2], label='Uc', color='green')
-plt.title("Three-Phase Voltages")
-plt.xlabel("Time (s)")
-plt.ylabel("Voltage (V)")
-plt.legend()
-plt.grid()
-
-# Subplot for currents
-plt.subplot(4, 1, 2)
-plt.plot(timestamps, currents[:, 0], label='Ia', color='red')
-plt.plot(timestamps, currents[:, 1], label='Ib', color='blue')
-plt.plot(timestamps, currents[:, 2], label='Ic', color='green')
-plt.title("Three-Phase Currents")
-plt.xlabel("Time (s)")
-plt.ylabel("Current (A)")
-plt.legend()
-plt.grid()
-
-# Subplot for zero-sequence voltage
-plt.subplot(4, 1, 3)
-plt.plot(timestamps, fifth_Harmonic_V0, label='Zero-sequence Voltage (U0)', color='blue')
-plt.title("Zero-Sequence Voltage (U0)")
-plt.xlabel("Time (s)")
-plt.ylabel("Voltage (V)")
-plt.legend()
-plt.grid()
-
-# Subplot for zero-sequence current
-plt.subplot(4, 1, 4)
-plt.plot(timestamps, fifth_Harmonic_I0, label='Zero-sequence Current (I0)', color='red')
-plt.title("Zero-Sequence Current (I0)")
-plt.xlabel("Time (s)")
-plt.ylabel("Current (A)")
-plt.legend()
-plt.grid()
-# Adjust spacing
-plt.tight_layout()
-
-# Show the plot
-plt.show()
