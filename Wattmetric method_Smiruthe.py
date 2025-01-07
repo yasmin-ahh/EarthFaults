@@ -1,254 +1,190 @@
+import os
 import numpy as np
-from scipy.signal import butter, filtfilt
 import matplotlib.pyplot as plt
+from utilities.signal_processing import high_pass_filter
+from utilities.fault_classification import detect_fault_with_thresholds, classify_fault
+from utilities.threshold_compute import compute_thresholds
+from utilities import pyComtrade
 
 
-# Step 1: Define High-Pass Filter
-def high_pass_filter(signal, cutoff, fs, order=4):
+# Compute zero-sequence voltage (U0) and current (I0)
+def compute_zero_sequence(voltages, currents, timestamps):
     """
-    Apply a high-pass filter to remove low-frequency noise.
-    Args:
-        signal (array): Input signal.
-        cutoff (float): Cutoff frequency.
-        fs (float): Sampling frequency.
-        order (int): Filter order.
+    Computes the zero-sequence voltage and current (U0 and I0).
+
+    Parameters:
+    - voltages: List of 3-phase voltage signals (list of arrays).
+    - currents: List of 3-phase current signals (list of arrays).
+
     Returns:
-        array: Filtered signal.
+    - u0: Zero-sequence voltage (1D array).
+    - i0: Zero-sequence current (1D array).
     """
-    nyquist = 0.5 * fs
-    normal_cutoff = cutoff / nyquist
-    b, a = butter(order, normal_cutoff, btype='high', analog=False)
-    return filtfilt(b, a, signal)
+    # Zero-sequence components are the mean of the 3-phase signals
+    u0 = np.mean(voltages, axis=0)
+    i0 = np.mean(currents, axis=0)
 
-# Step 2: Compute Zero-Sequence Components
-def compute_zero_sequence(voltages, currents):
+    return u0, i0
+
+
+# Classify the fault based on Power
+def classify_fault(u0, i0, power_threshold, file_name, power_data=None):
     """
-    Compute zero-sequence voltage and current components.
-    Args:
-        voltages (array): Voltage samples [Ua, Ub, Uc].
-        currents (array): Current samples [Ia, Ib, Ic].
+    Classifies a fault as 'Forward Fault' or 'Reverse Fault' based on power and phase difference.
+    Dynamically adjusts power threshold based on characteristics of the power signal.
+
+    Parameters:
+    - u0: Zero-sequence voltage (1D array).
+    - i0: Zero-sequence current (1D array).
+    - power_threshold: Power threshold for classification.
+    - file_name: The name of the file (e.g., "rspe28", "rspe29").
+    - power_data: Calculated power data (optional).
+
     Returns:
-        tuple: Zero-sequence voltage (U0) and current (I0).
+    - String indicating fault type ('Forward Fault', 'Reverse Fault', or 'Deadzone!!').
     """
-    U0 = np.mean(voltages, axis=1)  # Zero-sequence voltage
-    I0 = np.mean(currents, axis=1)  # Zero-sequence current
-    return U0, I0
+    # If power_data is provided, use it, else calculate power as usual
+    if power_data is None:
+        phase_angle = np.angle(u0) - np.angle(i0)
+        cos_phi = np.cos(phase_angle)
+        power_data = np.abs(u0) * np.abs(i0) * cos_phi  # Active power
 
-# Step 3: Fault Detection Logic
-def detect_fault_with_time(U0, I0, threshold, timestamps):
-    """
-    Detect faults based on zero-sequence components and active power, and identify fault occurrence time.
-    Args:
-        U0 (array): Zero-sequence voltage.
-        I0 (array): Zero-sequence current.
-        threshold (float): Fault detection threshold.
-        timestamps (array): Array of timestamps corresponding to U0 and I0.
-    Returns:
-        tuple: Fault detection results and fault occurrence time.
-    """
-    phase_angle = np.angle(U0) - np.angle(I0)  # Phase angle of zero-sequence components
-    cos_phi = np.cos(phase_angle)  # Power factor
-    W = U0 * I0 * cos_phi  # Active power
-    fault_time = None
+    print("First 20 Power values (W):", power_data[:20])  # Print first 20 power values for inspection
+    print("Power threshold:", power_threshold)
 
-    # Initialize results
-    results = "No Fault Detected"
+    # Dynamically adjust power threshold based on statistical properties (std deviation or mean)
+    # Use a simpler dynamic adjustment or apply a fixed multiplier
+    power_max = np.max(np.abs(power_data))
+    adjusted_threshold = power_max * 0.1  # Example: 10% of max power as threshold for fault detection
+    print(f"Adjusted power threshold for {file_name}: {adjusted_threshold:.6e}")
 
-    # Check for the first instance where active power crosses the threshold
-    for i, power in enumerate(W):
-        if power > threshold:
-            results = "Reverse Fault Detected"
-            fault_time = timestamps[i]
+    # Check for first occurrence where power crosses the threshold
+    fault_type = "Deadzone!!"  # Default state
+    for i, power in enumerate(power_data):
+        if power > adjusted_threshold:  # If power exceeds the threshold in positive direction
+            print(f"At index {i}, power {power} exceeds threshold. Reverse Fault Detected.")
+            fault_type = "Reverse Fault Detected"
             break
-        elif power < -threshold:
-            results = "Forward Fault Detected"
-            fault_time = timestamps[i]
+        elif power < -adjusted_threshold:  # If power exceeds the negative threshold
+            print(f"At index {i}, power {power} is below negative threshold. Forward Fault Detected.")
+            fault_type = "Forward Fault Detected"
             break
 
-    print("\nActive Power : ", np.mean(W))
-    print(f"Fault Time: {fault_time if fault_time else 'No Fault Detected'}")
-    print("Fault type : ", results)
-    return results, fault_time
+    return fault_type
 
 
-# Step 4: Calculating Threshold from Fault-free data
-def compute_threshold(U0, I0, fault_free_start, fault_free_end, timestamps, n=3):
+
+def compute_power_threshold(filtered_voltages, filtered_zero_seq_current, timestamps,
+                                           fault_free_start=0.0, fault_free_end=0.2):
     """
-    Compute threshold for fault detection based on fault-free data.
+    Compute the power threshold for the wattmetric method using fault-free data.
 
     Args:
-        U0 (array): Zero-sequence voltage array.
-        I0 (array): Zero-sequence current array.
-        fault_free_start (float): Start time of fault-free region (seconds).
-        fault_free_end (float): End time of fault-free region (seconds).
-        timestamps (array): Array of timestamps corresponding to U0 and I0.
-        n (int): Sensitivity multiplier for threshold calculation.
+        filtered_voltages: List of filtered voltage signals.
+        filtered_zero_seq_current: Filtered zero-sequence current signal.
+        timestamps: Array of timestamps corresponding to the data.
+        fault_free_start: Start time of the fault-free region (default: 0.0).
+        fault_free_end: End time of the fault-free region (default: 0.2).
 
     Returns:
-        float: Calculated threshold.
+        float: Calculated power threshold.
     """
-
-
-    # Identify fault-free data indices based on the given time range
+    # Identify the fault-free region based on timestamps
     fault_free_indices = (timestamps >= fault_free_start) & (timestamps <= fault_free_end)
 
-    # Extract fault-free data
-    fault_free_U0 = U0[fault_free_indices]
-    fault_free_I0 = I0[fault_free_indices]
+    # Extract fault-free data for zero-sequence voltage (U0) and current (I0)
+    fault_free_voltages = [v[fault_free_indices] for v in filtered_voltages]
+    fault_free_current = filtered_zero_seq_current[fault_free_indices]
 
-    # Compute active power (W) in fault-free region
-    phase_angle = np.angle(fault_free_U0) - np.angle(fault_free_I0)
+    # Compute U0 as the mean of the three-phase voltages in the fault-free region
+    u0 = np.mean(fault_free_voltages, axis=0)
+
+    # Compute the phase angle between U0 and I0
+    phase_angle = np.angle(u0) - np.angle(fault_free_current)
     cos_phi = np.cos(phase_angle)
-    fault_free_W = fault_free_U0 * fault_free_I0 * cos_phi
 
-    # Compute mean and standard deviation of active power
-    mean_W = np.mean(fault_free_W)
-    std_W = np.std(fault_free_W)
+    # Compute active power (W) in the fault-free region
+    power_fault_free_region = np.abs(u0) * np.abs(fault_free_current) * cos_phi
 
-    # Calculate threshold using mean + n * std deviation
-    threshold = mean_W + n * std_W
-    print(f"Computed Threshold: {threshold}")
+    # Compute the mean and standard deviation of the active power in the fault-free region
+    mean_power = np.mean(power_fault_free_region)
+    std_power = np.std(power_fault_free_region)
+
+    # Return computed threshold based on the mean and standard deviation
+    threshold = mean_power + 3 * std_power  # Using n=3 for sensitivity
+
+    print(f"Power Threshold: {threshold:.6e}")
 
     return threshold
 
-# Step 5: COMTRADE File Parsing
-cfg_file = r"C:\Users\smiru\OneDrive\Desktop\TUD\TUD - 3\PROJECT\RESPE Comtrade Data\RESPE Comtrade Data\Fault RESPE 4.cfg"
-dat_file = r"C:\Users\smiru\OneDrive\Desktop\TUD\TUD - 3\PROJECT\RESPE Comtrade Data\RESPE Comtrade Data\Fault RESPE 4.dat"
+def process_comtrade_data(folder_path, cutoff_freq=1):
+    files = [f for f in os.listdir(folder_path) if f.endswith('.cfg')]
+    for cfg_file in files:
+        dat_file = cfg_file.replace('.cfg', '.dat')
 
-# Parse the .cfg file
-cfg_metadata = {}
-analog_channel_labels = []
-digital_channel_labels = []
-with open(cfg_file, "r") as cfg:
-    lines = cfg.readlines()
+        if not os.path.exists(os.path.join(folder_path, dat_file)):
+            print(f"Dat file not found for {cfg_file}. Skipping.")
+            continue
 
-    # Extract station name and metadata
-    cfg_metadata['station_name'], cfg_metadata['rec_dev_id'], cfg_metadata['rev_year'] = lines[0].strip().split(",")
+        # Load the Comtrade data
+        comtradeObj = pyComtrade.ComtradeRecord()
+        comtradeObj.read(os.path.join(folder_path, cfg_file), os.path.join(folder_path, dat_file))
 
-    # Parse the second line
-    second_line = lines[1].strip().split(",")
-    cfg_metadata['total_channels'] = int(second_line[0])
-    analog_count = int(''.join(filter(str.isdigit, second_line[1])))  # Remove non-numeric characters
-    digital_count = int(''.join(filter(str.isdigit, second_line[2])))  # Remove non-numeric characters
+        # Extract time, voltage, and current data
+        timestamps = comtradeObj.get_timestamps()
 
-    # Extract analog channel labels
-    for i in range(2, 2 + analog_count):
-        parts = lines[i].strip().split(",")
-        analog_channel_labels.append(parts[1])  # Channel name
+        # Extract raw voltages, zero-sequence current, and currents
+        raw_voltages = [ch['values'] for ch in comtradeObj.cfg_data['A'][0:3]]  # Channels 1, 2, 3
+        raw_zero_seq_current = comtradeObj.cfg_data['A'][3]['values']  # Channel 4
+        # Debugging: Check if i0 has any values
+        print("Zero-sequence current (i0) before filtering:", raw_zero_seq_current[:10])  # Print first 10 samples
 
-    # Extract digital channel labels
-    for i in range(2 + analog_count, 2 + analog_count + digital_count):
-        parts = lines[i].strip().split(",")
-        digital_channel_labels.append(parts[1])  # Channel name
+        # Ensure dimensions match timestamps
+        min_length = len(timestamps)
+        voltages = [v[:min_length] for v in raw_voltages]
+        if raw_zero_seq_current is not None:
+            zero_seq_current = raw_zero_seq_current[:min_length]
 
-    # Extract sampling rates
-    sampling_rate_line = lines[-2].strip().split(",")
-    cfg_metadata['sampling_rates'] = [float(rate) if rate.replace('.', '', 1).isdigit() else rate for rate in sampling_rate_line]
+        # High-pass filter the signals
+        sampling_rate = 10e3  # Sampling frequency
+        filtered_voltages = [high_pass_filter(v, cutoff_freq, sampling_rate) for v in voltages]
+        filtered_zero_seq_current = high_pass_filter(zero_seq_current, cutoff_freq, sampling_rate)
 
-print("Metadata from .cfg file:")
-print(cfg_metadata)
-print("Analog Channel Labels:", analog_channel_labels)
-print("Digital Channel Labels:", digital_channel_labels)
+        print("Zero-sequence current (i0) after filtering:", filtered_zero_seq_current[:10])  # First 10 samples
 
-# Parse the .dat file
-timestamps = []
-analog_samples = []
-digital_samples = []
-with open(dat_file, "r") as dat:
-    for line in dat:
-        parts = line.strip().split(",")
+        # Compute zero-sequence voltage (U0)
+        u0 = np.mean(filtered_voltages, axis=0)
 
-        if len(parts) >= 2 + analog_count + digital_count:
-            try:
-                timestamps.append(float(parts[1]))  # Timestamp
-                analog_samples.append([float(x) for x in parts[2:2 + analog_count]])  # Analog data
-                digital_samples.append([int(x) for x in parts[2 + analog_count:]])  # Digital data
-            except ValueError:
-                print(f"Skipping malformed line: {line.strip()}")
+        # Plot U0 and I0 signals
+        plt.figure(figsize=(10, 6))
+        plt.plot(timestamps, np.abs(u0), label="Zero-sequence Voltage (|U0|)")
+        plt.plot(timestamps, np.abs(filtered_zero_seq_current), label="Zero-sequence Current (|I0|)")
+        plt.xlabel("Time (s)")
+        plt.ylabel("Amplitude")
+        plt.legend()
+        plt.title(f"Zero-sequence Voltage and Current {cfg_file}")
+        plt.grid()
+        plt.show()
+
+        # Compute thresholds
+        u0_threshold, i0_threshold = compute_thresholds(comtradeObj.cfg_data, filtered_zero_seq_current)
+        power_threshold = compute_power_threshold(filtered_voltages, filtered_zero_seq_current, timestamps)
+
+
+
+        # Detect faults
+        result = detect_fault_with_thresholds(u0, filtered_zero_seq_current, timestamps, u0_threshold, i0_threshold)
+        if result[0]:
+            # Classify the fault
+            fault_type = classify_fault(u0, filtered_zero_seq_current, power_threshold, cfg_file)
+            print(f"Fault detected in {cfg_file} at {result[1]:.6f} seconds. Fault type: {fault_type} .")
         else:
-            print(f"Skipping invalid line (not enough columns): {line.strip()}")
+            print(f"No fault detected in {cfg_file}.")
 
-# Convert to numpy arrays
-timestamps = np.array(timestamps)
-analog_samples = np.array(analog_samples)
-digital_samples = np.array(digital_samples)
 
-print("First 5 Timestamps:", timestamps[:5])
-print("First 5 Analog Samples:")
-print(analog_samples[:5, :])
-print("First 5 Digital Samples:")
-print(digital_samples[:5, :])
+folder_path = "comdata"
+process_comtrade_data(folder_path)
 
-# Step 5: Process Signals for Wattmetric Method
-sampling_frequency = 10000  # Example sampling frequency (Hz)
-cutoff_frequency = 0.1  # High-pass filter cutoff frequency (Hz)
 
-# Split voltage and current signals
-voltages = analog_samples[:, :3]  # Columns for Ua, Ub, Uc
-currents = analog_samples[:, 3:6]  # Columns for Ia, Ib, Ic
 
-# Apply high-pass filter to remove low-frequency noise
-filtered_voltages = np.array([high_pass_filter(v, cutoff_frequency, sampling_frequency) for v in voltages.T]).T
-filtered_currents = np.array([high_pass_filter(c, cutoff_frequency, sampling_frequency) for c in currents.T]).T
 
-# Compute zero-sequence components
-U0, I0 = compute_zero_sequence(filtered_voltages, filtered_currents)
-print("U0:", U0, " I0: ", I0)
-
-# Compute threshold
-# Define fault-free time range (e.g., 0 to 2 seconds)
-fault_free_start = 0.0  # Start time in seconds
-fault_free_end = 0.3  # End time in seconds
-THRESHOLD = compute_threshold(U0, I0, fault_free_start, fault_free_end, timestamps, n=3)
-
-# Detect faults
-fault_results = detect_fault_with_time(U0, I0, THRESHOLD,timestamps)
-
-# Plotting the original voltages and currents
-plt.figure(figsize=(15, 10))
-
-# Subplot for voltages
-plt.subplot(4, 1, 1)
-plt.plot(timestamps, voltages[:, 0], label='Ua', color='blue')
-plt.plot(timestamps, voltages[:, 1], label='Ub', color='orange')
-plt.plot(timestamps, voltages[:, 2], label='Uc', color='green')
-plt.title("Three-Phase Voltages")
-plt.xlabel("Time (s)")
-plt.ylabel("Voltage (V)")
-plt.legend()
-plt.grid()
-
-# Subplot for currents
-plt.subplot(4, 1, 2)
-plt.plot(timestamps, currents[:, 0], label='Ia', color='red')
-plt.plot(timestamps, currents[:, 1], label='Ib', color='purple')
-plt.plot(timestamps, currents[:, 2], label='Ic', color='brown')
-plt.title("Three-Phase Currents")
-plt.xlabel("Time (s)")
-plt.ylabel("Current (A)")
-plt.legend()
-plt.grid()
-
-# Subplot for zero-sequence voltage
-plt.subplot(4, 1, 3)
-plt.plot(timestamps, U0, label='Zero-sequence Voltage (U0)', color='blue')
-plt.title("Zero-Sequence Voltage (U0)")
-plt.xlabel("Time (s)")
-plt.ylabel("Voltage (V)")
-plt.legend()
-plt.grid()
-
-# Subplot for zero-sequence current
-plt.subplot(4, 1, 4)
-plt.plot(timestamps, I0, label='Zero-sequence Current (I0)', color='red')
-plt.title("Zero-Sequence Current (I0)")
-plt.xlabel("Time (s)")
-plt.ylabel("Current (A)")
-plt.legend()
-plt.grid()
-
-# Adjust spacing
-plt.tight_layout()
-
-# Show the plot
-plt.show()
