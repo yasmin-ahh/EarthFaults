@@ -2,12 +2,11 @@ import os
 import numpy as np
 import matplotlib.pyplot as plt
 from utilities.signal_processing import high_pass_filter, band_pass_filter
-from utilities.fault_classification import detect_fault_with_thresholds, classify_fault
+from utilities.fault_classification import detect_fault_with_thresholds, classify_fault_wattmetric
 from utilities.threshold_compute import compute_thresholds
 import pyComtrade
 
-
-def process_comtrade_data(folder_path, cutoff_freq=20.0):
+def process_comtrade_data(folder_path, cutoff_freq=110.0):
     """
     Processes Comtrade files in a folder and identifies faults based on U0 and I0 thresholds.
 
@@ -43,12 +42,10 @@ def process_comtrade_data(folder_path, cutoff_freq=20.0):
             zero_seq_current = raw_zero_seq_current[:min_length]
 
 
-        # Band-pass filter the signals
+        # High-pass filter the signals
         sampling_rate = 10e3  # Sampling frequency
         filtered_voltages = [band_pass_filter(v, 10.0, 100.0, sampling_rate, 4, 'butter', False) for v in voltages]
         filtered_zero_seq_current = band_pass_filter(zero_seq_current, 10.0, 100.0, sampling_rate, 4, 'butter', False)
-        # filtered_voltages = [high_pass_filter(v, cutoff_freq, sampling_rate) for v in voltages]
-        # filtered_zero_seq_current = high_pass_filter(zero_seq_current, cutoff_freq, sampling_rate)
 
         # Compute zero-sequence voltage (U0)
         u0 = np.mean(filtered_voltages, axis=0)
@@ -58,10 +55,10 @@ def process_comtrade_data(folder_path, cutoff_freq=20.0):
 
         # Detect faults
         result = detect_fault_with_thresholds(u0, filtered_zero_seq_current, timestamps, u0_threshold, i0_threshold)
-        if result[0]:
-            # Classify the fault
-            fault_type = classify_fault(u0, filtered_zero_seq_current)
-            print(f"Fault detected in {cfg_file} at {result[1]:.6f} seconds. Fault type: {fault_type} .")
+        if result[0]:  # Fault detected
+            fault_time = result[1]
+            fault_direction = classify_fault_wattmetric(u0, filtered_zero_seq_current, timestamps, fault_time, threshold=1000)
+            print(f"Fault detected in {cfg_file} at {fault_time:.6f} seconds. Fault direction: {fault_direction}.")
         else:
             print(f"No fault detected in {cfg_file}.")
 

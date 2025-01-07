@@ -1,5 +1,7 @@
 import numpy as np
 import matplotlib.pyplot as plt
+import time
+
 # Classify the fault based on the phase difference between U0 and I0
 def classify_fault(u0, i0):
     """
@@ -20,6 +22,55 @@ def classify_fault(u0, i0):
         return "Forward Fault"
     else:
         return "Reverse Fault"
+
+def classify_fault_wattmetric(u0, i0):
+    cos_phi = np.cos(np.angle(u0) - np.angle(i0))  # Phase relationship
+    w = np.real(u0 * np.conj(i0)) * cos_phi  # Active power calculation
+
+
+def classify_fault_wattmetric(u0, i0, timestamps, start_time, threshold=0):
+    """
+    Classifies the fault direction using the Wattmetric method after a fault is detected.
+
+    Parameters:
+    - u0: Zero-sequence voltage (1D array, complex values).
+    - i0: Zero-sequence current (1D array, complex values).
+    - timestamps: Array of timestamps corresponding to the signals.
+    - start_time: Time when the fault was detected.
+    - threshold: Threshold for active power to classify direction (default: 0).
+
+    Returns:
+    - fault_direction: "Forward Fault" or "Reverse Fault".
+    """
+    # Find the starting index for the 3-second window
+    start_index = np.searchsorted(timestamps, start_time)
+
+    # Define the end of the 3-second window
+    end_time = start_time + 3.0
+    end_index = np.searchsorted(timestamps, end_time)
+
+    # Extract data within the 3-second window
+    u0_window = u0[start_index:end_index]
+    i0_window = i0[start_index:end_index]
+
+    # Calculate magnitudes and phase difference
+    u0_magnitude = np.abs(u0_window)
+    i0_magnitude = np.abs(i0_window)
+    phase_diff = np.angle(u0_window) - np.angle(i0_window)
+    print("Phase Difference: ", phase_diff)
+
+    # Calculate active power explicitly
+    active_power = np.mean(u0_magnitude * i0_magnitude * np.cos(phase_diff))
+    print("Active Power: ", active_power)
+
+    # Compare active power to the threshold
+    if active_power < 0:
+        fault_direction = "Forward Fault"
+    else:
+        fault_direction = "Reverse Fault"
+
+    return fault_direction
+
 
 def detect_fault_with_thresholds(u0, i0, timestamps, u0_threshold, i0_threshold):
     """
