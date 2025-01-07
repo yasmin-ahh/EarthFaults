@@ -37,6 +37,7 @@ def compute_thresholds(cfg_data, zero_seq_current):
         calculate_nominal_voltage(cfg_data['A'][i]) for i in range(3)  # For U L1-N, U L2-N, U L3-N
     ]
     # Zero-sequence voltage threshold: 20% of the mean nominal voltage
+    nominal_voltage = 20e3
     u0_threshold = 0.3 * nominal_voltage
     # Zero-sequence current threshold: Dynamic (mean + 3 * std), minimum of 10A
     abs_i0 = np.abs(zero_seq_current)
@@ -44,7 +45,6 @@ def compute_thresholds(cfg_data, zero_seq_current):
     i0_std = np.std(zero_seq_current)
     # i0_threshold =  i0_mean + 3 * i0_std  # Minimum threshold is set to 10A
 
-    nominal_voltage = 20e3
     i0_threshold = 50
 
     print(f"Computed Thresholds - U0: {u0_threshold:.2f} V, I0: {i0_threshold} A")  # Debugging

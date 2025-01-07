@@ -57,11 +57,11 @@ def classify_fault_wattmetric(u0, i0, timestamps, start_time, threshold=0):
     u0_magnitude = np.abs(u0_window)
     i0_magnitude = np.abs(i0_window)
     phase_diff = np.angle(u0_window) - np.angle(i0_window)
-    print("Phase Difference: ", phase_diff)
+    # print("Phase Difference: ", phase_diff)
 
     # Calculate active power explicitly
     active_power = np.mean(u0_magnitude * i0_magnitude * np.cos(phase_diff))
-    print("Active Power: ", active_power)
+    # print("Active Power: ", active_power)
 
     # Compare active power to the threshold
     if active_power < 0:
