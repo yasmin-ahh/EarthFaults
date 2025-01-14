@@ -58,6 +58,47 @@ def band_pass_filter(data, low_cutoff, high_cutoff, fs, order=4, filter_type='bu
         filtered_data = moving_average(filtered_data, window_size=10)
     
     return filtered_data
+
+def extract_fifth_harmonic1(signal, sampling_rate):
+    """
+    Extract the fifth harmonic from the given signal using FFT.
+
+    Parameters:
+        signal (numpy.ndarray): Input signal array (1D or 2D).
+            For 2D, each row is considered an individual signal.
+        sampling_rate (int): Sampling rate of the signal in Hz.
+
+    Returns:
+        numpy.ndarray: The fifth harmonic component of the input signal, with the same shape as the input.
+    """
+    # Ensure signal is a 2D array for consistent processing
+    signal = np.atleast_2d(signal)
+
+    # Number of samples
+    n_samples = signal.shape[1]
+
+    # Frequency resolution
+    freq_resolution = sampling_rate / n_samples
+
+    # Frequency indices corresponding to harmonics
+    fifth_harmonic_index = int(5 * n_samples / sampling_rate)
+
+    # FFT of the signal
+    fft_signal = np.fft.fft(signal, axis=1)
+
+    # Zero out all frequencies except the fifth harmonic and its conjugate
+    filtered_fft = np.zeros_like(fft_signal)
+    filtered_fft[:, fifth_harmonic_index] = fft_signal[:, fifth_harmonic_index]
+    filtered_fft[:, -fifth_harmonic_index] = fft_signal[:, -fifth_harmonic_index]
+
+    # Inverse FFT to get back to time domain
+    fifth_harmonic = np.fft.ifft(filtered_fft, axis=1).real
+
+    # If input was 1D, return a 1D array
+    if signal.shape[0] == 1:
+        return fifth_harmonic.flatten()
+
+    return fifth_harmonic
     
 def extract_fifth_harmonic2(signal, sampling_rate):
     """
