@@ -2,7 +2,7 @@ import os
 import numpy as np
 import matplotlib.pyplot as plt
 from utilities.signal_processing import high_pass_filter, band_pass_filter, extract_fifth_harmonic2
-from utilities.fault_classification import detect_fault_Fifth_Harmonic, classify_fault_Fifth_Harmonic,detect_fault_with_thresholds
+from utilities.fault_classification import detect_fault_with_thresholds
 from utilities.threshold_compute import compute_thresholds_Fifth_Harmonic, compute_thresholds
 from utilities import pyComtrade
 
