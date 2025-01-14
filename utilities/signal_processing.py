@@ -58,3 +58,38 @@ def band_pass_filter(data, low_cutoff, high_cutoff, fs, order=4, filter_type='bu
         filtered_data = moving_average(filtered_data, window_size=10)
     
     return filtered_data
+    
+def extract_fifth_harmonic2(signal, sampling_rate):
+    """
+    Extracts the fifth-order harmonic component of a 1D array signal.
+    
+    Parameters:
+        signal (numpy.ndarray): 1D array representing the input signal.
+        sampling_rate (float): Sampling rate of the signal in Hz.
+    
+    Returns:
+        numpy.ndarray: The fifth-order harmonic component of the signal.
+    """
+    # Perform FFT on the signal
+    fft_result = np.fft.fft(signal)
+    frequencies = np.fft.fftfreq(len(signal), d=1/sampling_rate)
+    
+    # Find the fundamental frequency
+    magnitude = np.abs(fft_result)
+    fundamental_idx = np.argmax(magnitude[1:]) + 1  # Exclude the DC component at index 0
+    fundamental_freq = frequencies[fundamental_idx]
+    
+    # Identify the fifth harmonic frequency
+    fifth_harmonic_freq = 5 * fundamental_freq
+    
+    # Create a mask to isolate the fifth harmonic
+    fifth_harmonic_mask = np.isclose(np.abs(frequencies), fifth_harmonic_freq, atol=fundamental_freq/2)
+    
+    # Filter out all other frequencies except the fifth harmonic
+    filtered_fft = np.zeros_like(fft_result)
+    filtered_fft[fifth_harmonic_mask] = fft_result[fifth_harmonic_mask]
+    
+    # Perform the inverse FFT to reconstruct the time-domain fifth harmonic signal
+    fifth_harmonic_signal = np.fft.ifft(filtered_fft).real
+    
+    return fifth_harmonic_signal
