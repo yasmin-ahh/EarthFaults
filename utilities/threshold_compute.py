@@ -49,3 +49,30 @@ def compute_thresholds(cfg_data, zero_seq_current):
 
     print(f"Computed Thresholds - U0: {u0_threshold:.2f} V, I0: {i0_threshold} A")  # Debugging
     return u0_threshold, i0_threshold
+    
+def compute_thresholds_Fifth_Harmonic(u0, i0):
+    """
+    Computes automated thresholds for zero-sequence voltage (U0) and current (I0).
+
+    Parameters:
+    - cfg_data: Configuration data extracted from the COMTRADE file.
+    - zero_seq_current: Zero-sequence current (I0) values.
+
+    Returns:
+    - u0_threshold: Threshold for zero-sequence voltage.
+    - i0_threshold: Threshold for zero-sequence current.
+    """
+  
+    u0_mean = np.mean(u0)
+    u0_std = np.std(u0)
+    # Zero-sequence voltage threshold: 20% of the mean nominal voltage
+    u0_threshold = u0_mean + 3*u0_std
+    # Zero-sequence current threshold: Dynamic (mean + 3 * std), minimum of 10A
+
+    i0_mean = np.mean(i0)
+    i0_std = np.std(i0)
+    i0_threshold =  i0_mean + 3 * i0_std  # Minimum threshold is set to 10A
+
+
+    print(f"Computed Thresholds - U0: {u0_threshold:.2f} V, I0: {i0_threshold} A")  # Debugging
+    return u0_threshold, i0_threshold
