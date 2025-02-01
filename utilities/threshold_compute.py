@@ -76,3 +76,27 @@ def compute_thresholds_Fifth_Harmonic(u0, i0):
 
     print(f"Computed Thresholds - U0: {u0_threshold:.2f} V, I0: {i0_threshold} A")  # Debugging
     return u0_threshold, i0_threshold
+
+def compute_thresholds_wattmetric(cfg_data):
+    """
+    Computes automated thresholds for zero-sequence voltage (U0) and current (I0).
+
+    Parameters:
+    - cfg_data: Configuration data extracted from the COMTRADE file.
+    - zero_seq_current: Zero-sequence current (I0) values.
+
+    Returns:
+    - u0_threshold: Threshold for zero-sequence voltage.
+    - i0_threshold: Threshold for zero-sequence current.
+    """
+    # Calculate nominal voltages for each phase
+    nominal_voltages = [
+        calculate_nominal_voltage(cfg_data['A'][i]) for i in range(3)  # For U L1-N, U L2-N, U L3-N
+    ]
+    mean_nominal_voltage = np.mean(nominal_voltages)
+    # Zero-sequence voltage threshold: 20% of the mean nominal voltage
+    u0_threshold = 0.3 * mean_nominal_voltage
+
+
+    print(f"Computed Thresholds - U0: {u0_threshold:.2f} V")  # Debugging
+    return u0_threshold

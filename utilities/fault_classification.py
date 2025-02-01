@@ -71,6 +71,31 @@ def classify_fault_wattmetric(u0, i0, timestamps, start_time, threshold=0):
 
     return fault_direction
 
+def detect_fault_with_thresholds_wattmetric(u0, timestamps, u0_threshold):
+    """
+    Detects a fault based on zero-sequence voltage and current thresholds.
+
+    Parameters:
+    - u0: Zero-sequence voltage (1D array).
+    - i0: Zero-sequence current (1D array).
+    - timestamps: Array of timestamps corresponding to the signals.
+    - u0_threshold: Threshold for zero-sequence voltage.
+    - i0_threshold: Threshold for zero-sequence current.
+
+    Returns:
+    - fault_time: Timestamp when the fault is first detected, or None if no fault.
+    """
+    fault_detected = False
+    fault_indices = []
+
+    # Iterate through the length of u0 (assuming u0, i0, and timestamps are of the same length)
+    fault_indices = np.where(np.abs(u0) > u0_threshold)
+
+    if len(fault_indices) > 0:
+        fault_detected = True
+        fault_time = timestamps[fault_indices[0]]  # Time of the first fault
+        return fault_detected, fault_time
+    return fault_detected, None
 
 def detect_fault_with_thresholds(u0, i0, timestamps, u0_threshold, i0_threshold):
     """

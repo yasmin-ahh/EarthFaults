@@ -1,8 +1,8 @@
 import os
 import numpy as np
 import matplotlib.pyplot as plt
-from utilities.fault_classification import detect_fault_with_thresholds
-from utilities.threshold_compute import compute_thresholds
+from utilities.fault_classification import detect_fault_with_thresholds_wattmetric
+from utilities.threshold_compute import compute_thresholds_wattmetric
 from utilities import pyComtrade
 
 
@@ -12,11 +12,12 @@ def classify_fault_wattmetric(u0, i0, timestamps,cfg_file, power_data=None):
     if power_data is None:
         phase_angle = np.angle(u0) - np.angle(i0)
         cos_phi = np.cos(phase_angle)
-        power_data = np.abs(u0) * np.abs(i0) * cos_phi  # Active power
+        power_data = np.abs(u0) * np.abs(i0) * cos_phi# Active power
+        phi_threshold = 0.2 * np.mean(np.angle(u0) - np.angle(i0))
 
     # Dynamically adjust power threshold based on statistical properties (std deviation or mean)
     # power_max = np.max(np.abs(power_data))
-    adjusted_threshold = 20000
+    adjusted_threshold = 2
 
 
     # Plot Active power vs Time
@@ -32,10 +33,10 @@ def classify_fault_wattmetric(u0, i0, timestamps,cfg_file, power_data=None):
     # Check for first occurrence where power crosses the threshold
     fault_type = "Deadzone!!"  # Default state
     for i, power in enumerate(power_data):
-        if power > adjusted_threshold:  # If power exceeds the threshold in positive direction
+        if (phase_angle > phi_threshold).any() and (power > adjusted_threshold).any():  # If power exceeds the threshold in positive direction
             fault_type = "Reverse Fault Detected"
             break
-        elif power < -adjusted_threshold:  # If power exceeds the negative threshold
+        elif (phase_angle > phi_threshold).any() and (power < -adjusted_threshold).any():  # If power exceeds the negative threshold
             fault_type = "Forward Fault Detected"
             break
 
@@ -87,19 +88,18 @@ def process_comtrade_data(folder_path, cutoff_freq=10):
         plt.show()
 
         # Compute thresholds
-        u0_threshold, i0_threshold = compute_thresholds(comtradeObj.cfg_data, filtered_zero_seq_current)
+        u0_threshold = compute_thresholds_wattmetric(comtradeObj.cfg_data)
 
         # Detect faults
-        result = detect_fault_with_thresholds(u0, filtered_zero_seq_current, timestamps, u0_threshold, i0_threshold)
+        result = detect_fault_with_thresholds_wattmetric(u0, timestamps, u0_threshold)
         if result[0]:
             # Classify the fault
             fault_type = classify_fault_wattmetric(u0, filtered_zero_seq_current, timestamps , cfg_file)
-            print(f"Fault detected in {cfg_file} at {result[1]:.6f} seconds. Fault type: {fault_type} .")
+            print(f"Fault detected in {cfg_file} at {result[1][0]:} seconds. Fault type: {fault_type} .")
         else:
             print(f"No fault detected in {cfg_file}.")
 
 
 folder_path = "comdata"
 process_comtrade_data(folder_path)
-
 
