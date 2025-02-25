@@ -186,11 +186,14 @@ def classify_wattmetric(u0, i0, timestamps, start_time, threshold=0):
     - fault_direction: "Forward Fault" or "Reverse Fault".
     """
     # Find the starting index for the 3-second window
-    start_index = np.searchsorted(timestamps, start_time)
+    start_index = (np.searchsorted(timestamps, (start_time)))
+
 
     # Define the end of the 3-second window
     end_time = start_time + 3.0
-    end_index = np.searchsorted(timestamps, end_time)
+    end_index = (np.searchsorted(timestamps, (end_time)))
+
+
 
     # Extract data within the 3-second window
     u0_window = u0[start_index:end_index]
@@ -202,14 +205,19 @@ def classify_wattmetric(u0, i0, timestamps, start_time, threshold=0):
     phase_diff = np.angle(u0_window) - np.angle(i0_window)
     # print("Phase Difference: ", phase_diff)
 
-    # Calculate active power explicitly
-    active_power = np.mean(u0_magnitude * i0_magnitude * np.cos(phase_diff))
-    # print("Active Power: ", active_power)
+    phi_threshold = 0.2 * np.mean(phase_diff)
+    active_power = u0_magnitude * i0_magnitude * np.cos(phase_diff)
+    adjusted_threshold = 2
 
-    # Compare active power to the threshold
-    if active_power < 0:
-        fault_direction = "Forward Fault"
-    else:
-        fault_direction = "Reverse Fault"
+    fault_type = "Deadzone!!"  # Default state
+    for i, power in enumerate(active_power):
+        if (phase_diff > phi_threshold).any() and (
+                power > adjusted_threshold).any():  # If power exceeds the threshold in positive direction
+            fault_type = "Reverse Fault Detected"
+            break
+        elif (phase_diff > phi_threshold).any() and (
+                power < -adjusted_threshold).any():  # If power exceeds the negative threshold
+            fault_type = "Forward Fault Detected"
+            break
 
-    return fault_direction
+    return fault_type
