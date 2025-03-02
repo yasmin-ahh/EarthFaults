@@ -2,10 +2,7 @@
 import os
 import pandas as pd
 import numpy as np
-from utilities.signal_processing import high_pass_filter, band_pass_filter
-from utilities.fault_classification import detect_fault_with_thresholds, classify_fault
-from utilities.threshold_compute import compute_thresholds
-from utilities.signal_processing import extract_fifth_harmonic1
+from utilities.signal_processing import compute_5th_harmonic_zero_sequence
 from utilities.fault_classification import detect_fault_Fifth_Harmonic
 
 input_folder_vf = 'newFaultsData/VF/'
@@ -50,41 +47,26 @@ for fault_type, folder_path in fault_folders.items():
         time = df["Time"].values
         voltages = df.iloc[:, 1:4].values  # First 3 columns after "Time"
         currents = df.iloc[:, 4:7].values  # Next 3 columns
+        # Compute the sampling frequency
+        sampling_interval = 10000  # Assuming uniform sampling
+        fs = 1 / sampling_interval  # Sampling frequency
+        
+        
+        # Compute 5th harmonic zero-sequence components
+        results = compute_5th_harmonic_zero_sequence(voltages, currents, fs)
+        # Compute fault parameters
+        fault_detected,Q_5, fault_direction, fault_time = detect_fault_Fifth_Harmonic(voltages, currents, time, 
+                                                                    results['V0_magnitude'], results['V0_phase'], 
+                                                                    results['I0_magnitude'], results['I0_phase'])
 
-        # Apply band-pass filtering
-        filtered_voltages = np.array([
-            band_pass_filter(v, 10.0, 100.0, sampling_rate, 4, 'butter', False) for v in voltages.T
-        ]).T
-        filtered_currents = np.array([
-            band_pass_filter(c, 10.0, 100.0, sampling_rate, 4, 'butter', False) for c in currents.T
-        ]).T
-
-        voltages5 = extract_fifth_harmonic1(filtered_voltages, sampling_rate)
-        currents5 = extract_fifth_harmonic1(filtered_currents, sampling_rate)
-
-        # Compute zero-sequence voltage (U0)
-        u0 = np.mean(voltages5, axis=1)
-        i0 = np.mean(currents5, axis=1)
-
-        # Compute thresholds
-        # u0_threshold, i0_threshold = compute_thresholds(None, filtered_currents[:, 0])  # Assuming first current as I0
-        # u0_threshold = 0.3*20e3
-        # i0_threshold = 10
-
-        # Detect faults
-        result = detect_fault_Fifth_Harmonic(u0, i0, time)
-
-        if result[0]:
-            # Classify the fault
-            detected_fault_direction = result[2]
-
+        if fault_detected:
             # Find the closest row in the original data
-            fault_index = np.argmin(np.abs(time - result[1]))
+            fault_index = np.argmin(np.abs(time - fault_time))
             original_row = df.iloc[fault_index]
 
             # Store result
             detection_results.append([
-                fault_case_number, result[1], detected_fault_direction, fault_type,  # Original direction is the folder name
+                fault_case_number, fault_time, fault_direction, fault_type,  # Original direction is the folder name
                 original_row.iloc[1], original_row.iloc[2], original_row.iloc[3],  # Voltages
                 original_row.iloc[4], original_row.iloc[5], original_row.iloc[6],  # Currents
                 "fifthHarmonic"  # Algorithm used
@@ -92,7 +74,7 @@ for fault_type, folder_path in fault_folders.items():
         else: # No fault detected
             detected_fault_direction = "None"
             detection_results.append([
-                fault_case_number, -1, detected_fault_direction, fault_type,  # Original direction is the folder name
+                fault_case_number, -1, fault_direction, fault_type,  # Original direction is the folder name
                 None, None, None,  # Voltages
                 None, None, None,  # Currents
                 "fifthHarmonic"  # Algorithm used
@@ -107,5 +89,3 @@ df_results = pd.DataFrame(detection_results, columns=[
 df_results.to_csv(output_csv, index=False)
 
 print(f"Fault detection results saved to {output_csv}.")
-
-
