@@ -141,32 +141,30 @@ def detect_fault_Fifth_Harmonic(u0, i0, timestamps,power_data=None):
     fault_detected = False
     fault_indices = []
     
-    if power_data is None:
-       phase_angle = np.angle(u0) - np.angle(i0)
-       sin_phi = np.sin(phase_angle)
-       power_data = (u0) * (i0) * sin_phi *10e11  # Reactive power
-    '''
-    # Plot Reactive power vs Time
-    plt.figure(figsize=(20, 6))
-    plt.plot(timestamps, power_data, label=" Reactive Power (W)")
-    plt.xlabel("Time (s)")
-    plt.ylabel("Amplitude")
-    plt.legend()
-    plt.title("Reactive Power")
-    plt.grid()
-    plt.show()
-    '''
-    # Iterate through the length of power data
-    fault_indices = np.where(power_data>1)[0]
+    #phase_angle = np.angle(u0 / i0, deg=True)
+    phase_angle = np.angle(u0) - np.angle(i0)
+
+    sin_phi = np.sin(phase_angle)
+    power_data = np.abs(u0) * np.abs(i0) * sin_phi  # Reactive power
+    current = i0 * sin_phi
     
+    # Dynamically adjust power threshold based on statistical properties (std deviation or mean)
+    power_max = np.max(np.abs(power_data))
+    adjusted_threshold = power_max * 0.1  # Example: 10% of max power as threshold for fault detection
+
+    # Iterate through the length of power data
+    fault_indices = np.where(np.abs(power_data)>adjusted_threshold)[0]
 
     if len(fault_indices) > 0:
         fault_detected = True
         fault_time = timestamps[fault_indices[0]]  # Time of the first fault
-        if sin_phi[fault_indices[0]] < 0:
-            fault_direction = "Forward Fault"
+        Q_post = power_data[fault_indices[0]:fault_indices[0]+500]
+        #print("Reactive Power post fault =",Q_post.mean())
+        if Q_post.mean()>0:  # If power exceeds the threshold in positive direction
+            fault_direction = "Forward Fault Detected"
         else:
-            fault_direction = "Reverse Fault"    
+            fault_direction = "Reverse Fault Detected"
+       
         
         return fault_detected, fault_time, fault_direction
     return fault_detected, None
