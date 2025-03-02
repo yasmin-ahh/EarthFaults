@@ -128,14 +128,7 @@ def detect_fault_Fifth_Harmonic(voltages, currents, time, V0_magnitude, V0_phase
     
     phi_5 = V0_phase - I0_phase  # Phase angle difference
     Q_5 = V0_magnitude * I0_magnitude * np.sin(phi_5)
-
-    # Improved fault direction detection based on active and reactive power
-    if np.abs(Q_5) > 1:
-        fault_direction = "Forward"
-    else:
-        fault_direction = "Reverse"
-
-
+    
     # Detect fault occurrence time by identifying significant rise in zero-sequence voltage/current
     threshold_V0 = 0.1 * V0_magnitude  # 10% of max V0 as threshold
     threshold_I0 = 0.1 * I0_magnitude  # 10% of max I0 as threshold
@@ -149,8 +142,17 @@ def detect_fault_Fifth_Harmonic(voltages, currents, time, V0_magnitude, V0_phase
     else:
         fault_detected = "false"
         fault_time = None
+    #fault direction detection based on reactive power and sin_phi
+    if np.abs(Q_5) > 1 and phi_5 >0:
+        fault_direction = "Forward"
+    elif 1 > np.abs(Q_5) > 10e-3 and phi_5 <0:
+        fault_direction = "Reverse"
+    else:
+        fault_direction = "None"
+        fault_detected = "false"
+        fault_time = None
 
-    return Q_5, fault_direction, fault_time
+    return fault_detected,Q_5, fault_direction, fault_time
 
 def classify_wattmetric(u0, i0, timestamps, start_time, threshold=0):
     """
