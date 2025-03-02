@@ -124,50 +124,33 @@ def detect_fault_with_thresholds(u0, i0, timestamps, u0_threshold, i0_threshold)
         return fault_detected, fault_time
     return fault_detected, None
 
-def detect_fault_Fifth_Harmonic(u0, i0, timestamps,power_data=None):
-    """
-    Detects a fault based on zero-sequence voltage and current thresholds.
-
-    Parameters:
-    - u0: Zero-sequence voltage (1D array).
-    - i0: Zero-sequence current (1D array).
-    - timestamps: Array of timestamps corresponding to the signals.
-
-    Returns:
-    - fault_detected : True or Faule if the fault is detected    
-    - fault_time: Timestamp when the fault is first detected, or None if no fault.
-    - fault_direction: Forward or Reverse fault based on sin_phi
-    """
-    fault_detected = False
-    fault_indices = []
+def detect_fault_Fifth_Harmonic(voltages, currents, time, V0_magnitude, V0_phase, I0_magnitude, I0_phase):
     
-    #phase_angle = np.angle(u0 / i0, deg=True)
-    phase_angle = np.angle(u0) - np.angle(i0)
+    phi_5 = V0_phase - I0_phase  # Phase angle difference
+    Q_5 = V0_magnitude * I0_magnitude * np.sin(phi_5)
 
-    sin_phi = np.sin(phase_angle)
-    power_data = np.abs(u0) * np.abs(i0) * sin_phi  # Reactive power
-    current = i0 * sin_phi
+    # Improved fault direction detection based on active and reactive power
+    if np.abs(Q_5) > 1:
+        fault_direction = "Forward"
+    else:
+        fault_direction = "Reverse"
+
+
+    # Detect fault occurrence time by identifying significant rise in zero-sequence voltage/current
+    threshold_V0 = 0.1 * V0_magnitude  # 10% of max V0 as threshold
+    threshold_I0 = 0.1 * I0_magnitude  # 10% of max I0 as threshold
+
+    fault_time_idx = np.where(((voltages[:, 0] + voltages[:, 1] + voltages[:, 2]) / 3 >= threshold_V0) &
+                              ((currents[:, 0] + currents[:, 1] + currents[:, 2]) / 3 >= threshold_I0))[0]
     
-    # Dynamically adjust power threshold based on statistical properties (std deviation or mean)
-    power_max = np.max(np.abs(power_data))
-    adjusted_threshold = power_max * 0.1  # Example: 10% of max power as threshold for fault detection
+    if len(fault_time_idx) > 0:
+        fault_detected = "true"
+        fault_time = time[fault_time_idx[0]]  
+    else:
+        fault_detected = "false"
+        fault_time = None
 
-    # Iterate through the length of power data
-    fault_indices = np.where(np.abs(power_data)>adjusted_threshold)[0]
-
-    if len(fault_indices) > 0:
-        fault_detected = True
-        fault_time = timestamps[fault_indices[0]]  # Time of the first fault
-        Q_post = power_data[fault_indices[0]:fault_indices[0]+500]
-        #print("Reactive Power post fault =",Q_post.mean())
-        if Q_post.mean()>0:  # If power exceeds the threshold in positive direction
-            fault_direction = "Forward Fault Detected"
-        else:
-            fault_direction = "Reverse Fault Detected"
-       
-        
-        return fault_detected, fault_time, fault_direction
-    return fault_detected, None
+    return Q_5, fault_direction, fault_time
 
 def classify_wattmetric(u0, i0, timestamps, start_time, threshold=0):
     """
