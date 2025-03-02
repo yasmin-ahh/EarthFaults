@@ -72,7 +72,7 @@ for fault_type, folder_path in fault_folders.items():
                 "fifthHarmonic"  # Algorithm used
             ])
         else: # No fault detected
-            detected_fault_direction = "None"
+            fault_direction = "None"
             detection_results.append([
                 fault_case_number, -1, fault_direction, fault_type,  # Original direction is the folder name
                 None, None, None,  # Voltages
