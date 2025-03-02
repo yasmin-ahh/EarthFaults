@@ -59,78 +59,35 @@ def band_pass_filter(data, low_cutoff, high_cutoff, fs, order=4, filter_type='bu
     
     return filtered_data
 
-def extract_fifth_harmonic1(signal, sampling_rate):
-    """
-    Extract the fifth harmonic from the given signal using FFT.
+def extract_fifth_harmonic(signal, fs):
+    N = len(signal)
+    freqs = np.fft.fftfreq(N, d=1/fs)  # Frequency bins
+    fft_values = np.fft.fft(signal)  # Compute FFT
 
-    Parameters:
-        signal (numpy.ndarray): Input signal array (1D or 2D).
-            For 2D, each row is considered an individual signal.
-        sampling_rate (int): Sampling rate of the signal in Hz.
-
-    Returns:
-        numpy.ndarray: The fifth harmonic component of the input signal, with the same shape as the input.
-    """
-    # Ensure signal is a 2D array for consistent processing
-    signal = np.atleast_2d(signal)
-
-    # Number of samples
-    n_samples = signal.shape[1]
-
-    # Frequency resolution
-    freq_resolution = sampling_rate / n_samples
-
-    # Frequency indices corresponding to harmonics
-    fifth_harmonic_index = int(5 * n_samples / sampling_rate)
-
-    # FFT of the signal
-    fft_signal = np.fft.fft(signal, axis=1)
-
-    # Zero out all frequencies except the fifth harmonic and its conjugate
-    filtered_fft = np.zeros_like(fft_signal)
-    filtered_fft[:, fifth_harmonic_index] = fft_signal[:, fifth_harmonic_index]
-    filtered_fft[:, -fifth_harmonic_index] = fft_signal[:, -fifth_harmonic_index]
-
-    # Inverse FFT to get back to time domain
-    fifth_harmonic = np.fft.ifft(filtered_fft, axis=1).real
-
-    # If input was 1D, return a 1D array
-    if signal.shape[0] == 1:
-        return fifth_harmonic.flatten()
-
-    return fifth_harmonic
-    
-def extract_fifth_harmonic2(signal, sampling_rate):
-    """
-    Extracts the fifth-order harmonic component of a 1D array signal.
-    
-    Parameters:
-        signal (numpy.ndarray): 1D array representing the input signal.
-        sampling_rate (float): Sampling rate of the signal in Hz.
-    
-    Returns:
-        numpy.ndarray: The fifth-order harmonic component of the signal.
-    """
-    # Perform FFT on the signal
-    fft_result = np.fft.fft(signal)
-    frequencies = np.fft.fftfreq(len(signal), d=1/sampling_rate)
-    
-    # Find the fundamental frequency
-    magnitude = np.abs(fft_result)
-    fundamental_idx = np.argmax(magnitude[1:]) + 1  # Exclude the DC component at index 0
-    fundamental_freq = frequencies[fundamental_idx]
-    
-    # Identify the fifth harmonic frequency
+    # Find the index corresponding to the 5th harmonic
+    fundamental_freq = fs / N  # Fundamental frequency
     fifth_harmonic_freq = 5 * fundamental_freq
-    
-    # Create a mask to isolate the fifth harmonic
-    fifth_harmonic_mask = np.isclose(np.abs(frequencies), fifth_harmonic_freq, atol=fundamental_freq/2)
-    
-    # Filter out all other frequencies except the fifth harmonic
-    filtered_fft = np.zeros_like(fft_result)
-    filtered_fft[fifth_harmonic_mask] = fft_result[fifth_harmonic_mask]
-    
-    # Perform the inverse FFT to reconstruct the time-domain fifth harmonic signal
-    fifth_harmonic_signal = np.fft.ifft(filtered_fft).real
-    
-    return fifth_harmonic_signal
+    idx = np.argmin(np.abs(freqs - fifth_harmonic_freq))
+
+    # Extract the 5th harmonic component
+    fifth_harmonic = 2 * np.abs(fft_values[idx]) / N
+    phase = np.angle(fft_values[idx])
+
+    return fifth_harmonic, phase
+
+def compute_5th_harmonic_zero_sequence(voltage_signals, current_signals, fs):
+    # Extract 5th harmonic components for voltages and currents
+    voltage_5th_harmonics = [extract_fifth_harmonic(voltage_signals[:, i], fs) for i in range(3)]
+    current_5th_harmonics = [extract_fifth_harmonic(current_signals[:, i], fs) for i in range(3)]
+
+    # Compute zero-sequence components (V0 = (Va + Vb + Vc) / 3, I0 = (Ia + Ib + Ic) / 3)
+    V0_5th = sum([v[0] * np.exp(1j * v[1]) for v in voltage_5th_harmonics]) / 3
+    I0_5th = sum([i[0] * np.exp(1j * i[1]) for i in current_5th_harmonics]) / 3
+
+    # Get magnitude and phase of zero-sequence components
+    return {
+        "V0_magnitude": np.abs(V0_5th),
+        "V0_phase": np.angle(V0_5th),
+        "I0_magnitude": np.abs(I0_5th),
+        "I0_phase": np.angle(I0_5th)
+    }
