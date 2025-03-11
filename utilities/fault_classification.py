@@ -19,9 +19,9 @@ def classify_fault(u0, i0):
 
     # Classify based on phase difference
     if phase_difference > 0:
-        return "Forward Fault"
+        return "Forward"
     else:
-        return "Reverse Fault"
+        return "Reverse"
 
 def classify_fault_wattmetric(u0, i0):
     cos_phi = np.cos(np.angle(u0) - np.angle(i0))  # Phase relationship
@@ -130,27 +130,31 @@ def detect_fault_Fifth_Harmonic(voltages, currents, time, V0_magnitude, V0_phase
     Q_5 = V0_magnitude * I0_magnitude * np.sin(phi_5)
     
     # Detect fault occurrence time by identifying significant rise in zero-sequence voltage/current
-    threshold_V0 = 0.1 * V0_magnitude  # 10% of max V0 as threshold
-    threshold_I0 = 0.1 * I0_magnitude  # 10% of max I0 as threshold
+    min_threshold_V0 = 10  # Minimum 10V for fault detection
+    min_threshold_I0 = 0.05  # Minimum 0.05A for fault detection
+
+    threshold_V0 = max(0.1 * np.max(V0_magnitude), min_threshold_V0)
+    threshold_I0 = max(0.1 * np.max(I0_magnitude), min_threshold_I0)
+
 
     fault_time_idx = np.where(((voltages[:, 0] + voltages[:, 1] + voltages[:, 2]) / 3 >= threshold_V0) &
                               ((currents[:, 0] + currents[:, 1] + currents[:, 2]) / 3 >= threshold_I0))[0]
     
     if len(fault_time_idx) > 0:
-        fault_detected = "true"
+        fault_detected = True
         fault_time = time[fault_time_idx[0]]  
     else:
-        fault_detected = "false"
+        fault_detected = False
         fault_time = 0
     #fault direction detection based on reactive power and sin_phi
-    if np.abs(Q_5) > 1:
+    if np.abs(Q_5) > 2:  # Increase the threshold for a Forward fault
         fault_direction = "Forward"
-    elif np.abs(Q_5) > 10e-3:
+    elif np.abs(Q_5) > 0.5:  # Increase the threshold for a Reverse fault
         fault_direction = "Reverse"
     else:
         fault_direction = "None"
-        fault_detected = "false"
-        fault_time = 0
+        fault_detected = False  # Ensure we mark it as no fault
+        fault_time = time[0]  # Use the first timestamp for no fault
 
     return fault_detected,Q_5, fault_direction, fault_time
 
@@ -196,11 +200,11 @@ def classify_wattmetric(u0, i0, timestamps, start_time, threshold=0):
     for i, power in enumerate(active_power):
         if (phase_diff > phi_threshold).any() and (
                 power > adjusted_threshold).any():  # If power exceeds the threshold in positive direction
-            fault_type = "Reverse Fault Detected"
+            fault_type = "Reverse"
             break
         elif (phase_diff > phi_threshold).any() and (
                 power < -adjusted_threshold).any():  # If power exceeds the negative threshold
-            fault_type = "Forward Fault Detected"
+            fault_type = "Forward"
             break
 
     return fault_type

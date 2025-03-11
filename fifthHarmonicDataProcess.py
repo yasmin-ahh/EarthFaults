@@ -12,7 +12,7 @@ input_folder_gaf = 'newFaultsData/GAF/'
 
 # Paths
 base_folder = "newFaultsData"  # Update this with your actual output folder path
-output_csv = "fault_detection_results_fh.csv"
+output_csv = "fault_detection_results_fh5.csv"
 
 # Fault cases mapping
 fault_folders = {
@@ -60,31 +60,65 @@ for fault_type, folder_path in fault_folders.items():
                                                                     results['I0_magnitude'], results['I0_phase'])
 
         if fault_detected:
-            # Find the closest row in the original data
             fault_index = np.argmin(np.abs(time - fault_time))
+
+            # Extract values at the fault time
+            U0_at_fault = results["V0_magnitude"]
+            I0_at_fault = results["I0_magnitude"]
+            phase_diff_5th = results["V0_phase"] - results["I0_phase"]
+
+            # Extract corresponding voltage & current values at the fault time
             original_row = df.iloc[fault_index]
+            V1, V2, V3 = original_row.iloc[1], original_row.iloc[2], original_row.iloc[3]
+            I1, I2, I3 = original_row.iloc[4], original_row.iloc[5], original_row.iloc[6]
 
             # Store result
             detection_results.append([
-                fault_case_number, fault_time, fault_direction, fault_type,  # Original direction is the folder name
-                original_row.iloc[1], original_row.iloc[2], original_row.iloc[3],  # Voltages
-                original_row.iloc[4], original_row.iloc[5], original_row.iloc[6],  # Currents
-                "fifthHarmonic"  # Algorithm used
+                fault_case_number, fault_time, fault_direction, fault_type,
+                V1, V2, V3,  # Voltages
+                I1, I2, I3,  # Currents
+                U0_at_fault, I0_at_fault,  # Zero-sequence voltage and current (5th harmonic magnitude)
+                0, 0, 0, 0,  # Transient features (set to 0)
+                0, 0, 0,  # Transient features (set to 0)
+                0, 0, 0,  # Wattmetric features (set to 0)
+                Q_5, phase_diff_5th,  # 5th harmonic features
+                "fifthHarmonic"
             ])
         else: # No fault detected
-            fault_direction = "None"
+            detected_fault_direction = "None"
+            original_row = df.iloc[0]
+            # Extract voltages & currents from the first row
+            V1, V2, V3 = original_row.iloc[1], original_row.iloc[2], original_row.iloc[3]
+            I1, I2, I3 = original_row.iloc[4], original_row.iloc[5], original_row.iloc[6]
+
+            # Compute steady-state U0 & I0
+            U0_no_fault = np.mean([V1, V2, V3])
+            I0_no_fault = np.mean([I1, I2, I3])
+
+            # Store result with steady-state values
             detection_results.append([
-                fault_case_number, -1, fault_direction, fault_type,  # Original direction is the folder name
-                None, None, None,  # Voltages
-                None, None, None,  # Currents
-                "fifthHarmonic"  # Algorithm used
+                fault_case_number, -1, fault_direction, fault_type,
+                V1, V2, V3,  # Use steady-state voltages
+                I1, I2, I3,  # Use steady-state currents
+                U0_no_fault, I0_no_fault,  # Use steady-state zero-sequence values
+                0, 0, 0, 0,  # Transient features (set to 0)
+                0, 0, 0,  # Transient features (set to 0)
+                0, 0, 0,  # Wattmetric features (set to 0)
+                0, 0,  # 5th harmonic features (set to 0)
+                "fifthHarmonic"
             ])
 
 # Convert results to DataFrame and save
 df_results = pd.DataFrame(detection_results, columns=[
     "FaultCaseNumber", "timeDetected", "DetectedFaultDirection", "OriginalDirection",
-    "Voltage1", "Voltage2", "Voltage3",
-    "Current1", "Current2", "Current3", "algo_used"
+    "RawVoltage1", "RawVoltage2", "RawVoltage3",
+    "RawCurrent1", "RawCurrent2", "RawCurrent3", 
+    "U0", "I0",  # Added zero-sequence voltage & current
+    "U0_max", "I0_max", "dU0_dt", "dI0_dt",  # Peak & rate of change
+    "dominant_freq_U0", "high_freq_energy_U0", "spectral_entropy_U0",  # Frequency features
+    "ActivePower", "ReactivePower", "PhaseDifference",  # Wattmetric features
+    "Q5", "PhaseDifference_5th",  # 5th harmonic features
+    "algorithm_used"
 ])
 df_results.to_csv(output_csv, index=False)
 

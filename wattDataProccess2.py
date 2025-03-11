@@ -12,7 +12,7 @@ input_folder_gaf = 'newFaultsData/GAF/'
 
 # Paths
 base_folder = "newFaultsData"  # Update this with your actual output folder path
-output_csv = "fault_detection_results_wt2.csv"
+output_csv = "fault_detection_results_wt3.csv"
 
 # Fault cases mapping
 fault_folders = {
@@ -68,27 +68,65 @@ for fault_type, folder_path in fault_folders.items():
             fault_index = np.argmin(np.abs(time - fault_time))
             original_row = df.iloc[fault_index]
 
+            # Extract values at the fault time
+            U0_at_fault = u0[fault_index]
+            I0_at_fault = i0[fault_index]
+
+            # Extract corresponding voltage & current values at the fault time
+            V1, V2, V3 = original_row.iloc[1], original_row.iloc[2], original_row.iloc[3]
+            I1, I2, I3 = original_row.iloc[4], original_row.iloc[5], original_row.iloc[6]
+
+            # Compute Wattmetric Features
+            phase_diff = np.angle(V1 + V2 + V3) - np.angle(I1 + I2 + I3)
+            active_power = np.abs(U0_at_fault) * np.abs(I0_at_fault) * np.cos(phase_diff)
+            reactive_power = np.abs(U0_at_fault) * np.abs(I0_at_fault) * np.sin(phase_diff)
+
             # Store result
             detection_results.append([
                 fault_case_number, fault_time, detected_fault_direction, fault_type,  # Original direction is the folder name
-                original_row.iloc[1], original_row.iloc[2], original_row.iloc[3],  # Voltages
-                original_row.iloc[4], original_row.iloc[5], original_row.iloc[6],  # Currents
+                V1, V2, V3,  # Voltages
+                I1, I2, I3,  # Currents
+                U0_at_fault, I0_at_fault,  # Zero-sequence voltage and current
+                0, 0, 0, 0,  # Transient features (set to 0)
+                0, 0, 0,  # FFT-based features (set to 0)
+                active_power, reactive_power, phase_diff,  # Wattmetric features
+                0, 0,  # 5th harmonic features (set to 0)
                 "wattmetric"  # Algorithm used
             ])
         else: # No fault detected
             detected_fault_direction = "None"
+            original_row = df.iloc[0]
+            # Extract voltages & currents from the first row
+            V1, V2, V3 = original_row.iloc[1], original_row.iloc[2], original_row.iloc[3]
+            I1, I2, I3 = original_row.iloc[4], original_row.iloc[5], original_row.iloc[6]
+
+            # Compute steady-state U0 & I0
+            U0_no_fault = np.mean([V1, V2, V3])
+            I0_no_fault = np.mean([I1, I2, I3])
+
             detection_results.append([
                 fault_case_number, -1, detected_fault_direction, fault_type,  # Original direction is the folder name
-                None, None, None,  # Voltages
-                None, None, None,  # Currents
+                V1, V2, V3,  # Use steady-state voltages
+                I1, I2, I3,  # Use steady-state currents
+                U0_no_fault, I0_no_fault,  # U0 and I0
+                0, 0, 0, 0,  # Transient features (set to 0)
+                0, 0, 0,  # FFT-based features (set to 0)
+                0, 0, 0,  # Wattmetric features (filled with 0)
+                0, 0,  # 5th harmonic features (set to 0)
                 "wattmetric"  # Algorithm used
             ])
 
 # Convert results to DataFrame and save
 df_results = pd.DataFrame(detection_results, columns=[
     "FaultCaseNumber", "timeDetected", "DetectedFaultDirection", "OriginalDirection",
-    "Voltage1", "Voltage2", "Voltage3",
-    "Current1", "Current2", "Current3", "algo_used"
+    "RawVoltage1", "RawVoltage2", "RawVoltage3",
+    "RawCurrent1", "RawCurrent2", "RawCurrent3", 
+    "U0", "I0",  # Added zero-sequence voltage & current
+    "U0_max", "I0_max", "dU0_dt", "dI0_dt",  # Peak & rate of change
+    "dominant_freq_U0", "high_freq_energy_U0", "spectral_entropy_U0",  # Frequency features
+    "ActivePower", "ReactivePower", "PhaseDifference",  # Wattmetric features
+    "Q5", "PhaseDifference_5th",  # 5th harmonic features
+    "algorithm_used"
 ])
 df_results.to_csv(output_csv, index=False)
 

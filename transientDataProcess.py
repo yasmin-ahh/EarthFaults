@@ -13,7 +13,7 @@ input_folder_gaf = 'newFaultsData/GAF/'
 
 # Paths
 base_folder = "newFaultsData"  # Update this with your actual output folder path
-output_csv = "fault_detection_results_tr2.csv"
+output_csv = "fault_detection_results_tr3.csv"
 
 # Fault cases mapping
 fault_folders = {
@@ -77,28 +77,78 @@ for fault_type, folder_path in fault_folders.items():
             # Find the closest row in the original data
             fault_index = np.argmin(np.abs(time - fault_time))
             original_row = df.iloc[fault_index]
+            
+            U0_at_fault = u0[fault_index]
+            I0_at_fault = i0[fault_index]
+
+            # Compute Peak Values Over Full Time-Series
+            U0_max = np.max(np.abs(u0))  # Peak zero-sequence voltage across all time
+            I0_max = np.max(np.abs(i0))  # Peak zero-sequence current across all time
+
+            # Compute Rate of Change Over Full Time-Series
+            dU0_dt = np.max(np.abs(np.gradient(u0, time)))  # Max rate of change of U0 over time
+            dI0_dt = np.max(np.abs(np.gradient(i0, time)))  # Max rate of change of I0 over time
+
+            # Compute FFT for frequency analysis (on the full U0 signal)
+            fft_U0 = np.fft.fft(u0)
+            freqs = np.fft.fftfreq(len(u0), d=(time[1] - time[0]))  # Frequency axis
+            dominant_freq_U0 = freqs[np.argmax(np.abs(fft_U0))]  # Frequency with highest energy
+
+            # Energy in high-frequency band (above 100 Hz)
+            high_freq_idx = np.where(freqs > 100)  # Consider above 100 Hz
+            high_freq_energy_U0 = np.sum(np.abs(fft_U0[high_freq_idx]) ** 2)
+
+            # Compute Spectral Entropy
+            power_spectrum = np.abs(fft_U0) ** 2
+            power_spectrum /= np.sum(power_spectrum)  # Normalize
+            spectral_entropy_U0 = -np.sum(power_spectrum * np.log2(power_spectrum + 1e-10))
 
             # Store result
             detection_results.append([
                 fault_case_number, fault_time, detected_fault_direction, fault_type,  # Original direction is the folder name
                 original_row.iloc[1], original_row.iloc[2], original_row.iloc[3],  # Voltages
                 original_row.iloc[4], original_row.iloc[5], original_row.iloc[6],  # Currents
+                U0_at_fault, I0_at_fault, # U0 and I0
+                U0_max, I0_max, dU0_dt, dI0_dt,  # Peak & rate of change features
+                dominant_freq_U0, high_freq_energy_U0, spectral_entropy_U0,  # Frequency features
+                0, 0, 0,  # Wattmetric features (filled with 0)
+                0, 0,  # 5th harmonic features (set to 0)
                 "transient"  # Algorithm used
             ])
-        else: # No fault detected
+        else: # No fault detectedDD
             detected_fault_direction = "None"
+            original_row = df.iloc[0]
+            # Extract voltages & currents from the first row
+            V1, V2, V3 = original_row.iloc[1], original_row.iloc[2], original_row.iloc[3]
+            I1, I2, I3 = original_row.iloc[4], original_row.iloc[5], original_row.iloc[6]
+
+            # Compute steady-state U0 & I0
+            U0_no_fault = np.mean([V1, V2, V3])
+            I0_no_fault = np.mean([I1, I2, I3])
+
             detection_results.append([
                 fault_case_number, -1, detected_fault_direction, fault_type,  # Original direction is the folder name
-                None, None, None,  # Voltages
-                None, None, None,  # Currents
+                V1, V2, V3,  # Use steady-state voltages
+                I1, I2, I3,  # Use steady-state currents
+                U0_no_fault, I0_no_fault,  # U0 and I0
+                0, 0, 0, 0,  # Transient features (set to 0)
+                0, 0, 0,  # FFT-based features (set to 0)
+                0, 0, 0,  # Wattmetric features (filled with 0)
+                0, 0,  # 5th harmonic features (set to 0)
                 "transient"  # Algorithm used
             ])
 
 # Convert results to DataFrame and save
 df_results = pd.DataFrame(detection_results, columns=[
     "FaultCaseNumber", "timeDetected", "DetectedFaultDirection", "OriginalDirection",
-    "Voltage1", "Voltage2", "Voltage3",
-    "Current1", "Current2", "Current3", "algo_used"
+    "RawVoltage1", "RawVoltage2", "RawVoltage3",
+    "RawCurrent1", "RawCurrent2", "RawCurrent3", 
+    "U0", "I0",  # Added zero-sequence voltage & current
+    "U0_max", "I0_max", "dU0_dt", "dI0_dt",  # Peak & rate of change
+    "dominant_freq_U0", "high_freq_energy_U0", "spectral_entropy_U0",  # Frequency features
+    "ActivePower", "ReactivePower", "PhaseDifference",  # Wattmetric features
+    "Q5", "PhaseDifference_5th",  # 5th harmonic features
+    "algorithm_used"
 ])
 df_results.to_csv(output_csv, index=False)
 
