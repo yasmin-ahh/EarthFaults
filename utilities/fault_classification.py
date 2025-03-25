@@ -124,19 +124,14 @@ def detect_fault_with_thresholds(u0, i0, timestamps, u0_threshold, i0_threshold)
         return fault_detected, fault_time
     return fault_detected, None
 
-def detect_fault_Fifth_Harmonic(voltages, currents, time, V0_magnitude, V0_phase, I0_magnitude, I0_phase):
+def detect_fault_Fifth_Harmonic(voltages, currents, time, V0_magnitude, V0_phase, I0_magnitude, I0_phase,threshold_V0,threshold_I0,threshold_Q):
     
     phi_5 = V0_phase - I0_phase  # Phase angle difference
     Q_5 = V0_magnitude * I0_magnitude * np.sin(phi_5)
     
-    # Detect fault occurrence time by identifying significant rise in zero-sequence voltage/current
-    min_threshold_V0 = 10  # Minimum 10V for fault detection
-    min_threshold_I0 = 0.05  # Minimum 0.05A for fault detection
-
-    threshold_V0 = max(0.1 * np.max(V0_magnitude), min_threshold_V0)
-    threshold_I0 = max(0.1 * np.max(I0_magnitude), min_threshold_I0)
-
-
+    #threshold_V0 = max(0.1 * np.max(V0_magnitude), min_threshold_V0)
+    #threshold_I0 = max(0.1 * np.max(I0_magnitude), min_threshold_I0)
+    
     fault_time_idx = np.where(((voltages[:, 0] + voltages[:, 1] + voltages[:, 2]) / 3 >= threshold_V0) &
                               ((currents[:, 0] + currents[:, 1] + currents[:, 2]) / 3 >= threshold_I0))[0]
     
@@ -147,9 +142,9 @@ def detect_fault_Fifth_Harmonic(voltages, currents, time, V0_magnitude, V0_phase
         fault_detected = False
         fault_time = 0
     #fault direction detection based on reactive power and sin_phi
-    if np.abs(Q_5) > 2:  # Increase the threshold for a Forward fault
+    if Q_5 > threshold_Q:  # Increase the threshold for a Forward fault
         fault_direction = "Forward"
-    elif np.abs(Q_5) > 0.5:  # Increase the threshold for a Reverse fault
+    elif Q_5 < -threshold_Q:  # Increase the threshold for a Reverse fault
         fault_direction = "Reverse"
     else:
         fault_direction = "None"
