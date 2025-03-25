@@ -85,7 +85,7 @@ for u0_threshold in u0_threshold_values:
                             V1, V2, V3,  # Voltages
                             I1, I2, I3,  # Currents
                             U0_at_fault, I0_at_fault,  # Zero-sequence voltage and current (5th harmonic magnitude)
-                            u0_threshold, i0_threshold,
+                            u0_threshold, i0_threshold,0,Q_threshold,
                             0, 0, 0, 0,  # Transient features (set to 0)
                             0, 0, 0,  # Transient features (set to 0)
                             0, 0, 0,  # Wattmetric features (set to 0)
@@ -109,7 +109,7 @@ for u0_threshold in u0_threshold_values:
                             V1, V2, V3,  # Use steady-state voltages
                             I1, I2, I3,  # Use steady-state currents
                             U0_no_fault, I0_no_fault,  # Use steady-state zero-sequence values
-                            u0_threshold, i0_threshold,
+                            u0_threshold, i0_threshold,0,Q_threshold,
                             0, 0, 0, 0,  # Transient features (set to 0)
                             0, 0, 0,  # Transient features (set to 0)
                             0, 0, 0,  # Wattmetric features (set to 0)
@@ -123,7 +123,7 @@ df_results = pd.DataFrame(detection_results, columns=[
     "RawVoltage1", "RawVoltage2", "RawVoltage3",
     "RawCurrent1", "RawCurrent2", "RawCurrent3",
     "U0", "I0",  # Added zero-sequence voltage & current
-    "U0Threshold", "I0Threshold",
+    "U0Threshold", "I0Threshold", "Power Threshold", "Q_threshold",
     "U0_max", "I0_max", "dU0_dt", "dI0_dt",  # Peak & rate of change
     "dominant_freq_U0", "high_freq_energy_U0", "spectral_entropy_U0",  # Frequency features
     "ActivePower", "ReactivePower", "PhaseDifference",  # Wattmetric features
