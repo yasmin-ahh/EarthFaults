@@ -27,7 +27,7 @@ sampling_rate = 10e3  # 10 kHz
 # Generate 5 random U0 and I0 threshold values
 u0_threshold_values = np.array([0.1*20e3, 0.2*20e3, 0.3*20e3, 0.4*20e3])
 i0_threshold_values = np.array([20, 30,40, 50])
-Q_threshold_values = np.array([0.5, 1, 1.5,2])
+Q_threshold_values = np.array([0, 0.5, 1, 1.5])
 # List to store results
 detection_results = []
 
